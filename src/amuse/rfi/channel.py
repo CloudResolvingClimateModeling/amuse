@@ -2731,3 +2731,52 @@ class LocalChannel(AbstractMessageChannel):
 
 class LocalMessage(AbstractMessage):
     pass
+
+
+
+class MpiChannelNoSpawn(MpiChannel):
+
+    process_counter = 1
+
+
+    def  __init__(self, name_of_the_worker, legacy_interface_type=None, interpreter_executable=None, **options):
+        MpiChannel.__init__(self, name_of_the_worker, legacy_interface_type, interpreter_executable, **options)
+        
+        
+    def start(self):
+          # This won't help since the worker is already running
+        # if not self.debugger_method is None:
+        #     command,arguments = self.debugger_method(self.full_name_of_the_worker,
+        #                                              self,
+        #                                              interpreter_executable = self.interpreter_executable)
+        # else:
+        #     if not self.can_redirect_output or (self.redirect_stdout_file == 'none' and self.redirect_stderr_file == 'none'):
+
+        #         if self.interpreter_executable is None:
+        #             command = self.full_name_of_the_worker
+        #             arguments = None
+        #         else:
+        #             command = self.interpreter_executable
+        #             arguments = [self.full_name_of_the_worker]
+        #     else:
+        #         command,arguments = self.REDIRECT(self.full_name_of_the_worker,
+        #                                           self.redirect_stdout_file,
+        #                                           self.redirect_stderr_file,
+        #                                           command = self.python_exe_for_redirection,
+        #                                           interpreter_executable = self.interpreter_executable)
+
+        logger.info("MpiChannelNoSpawn.start")
+        
+        proc_offset = MpiChannelNoSpawn.process_counter
+        MpiChannelNoSpawn.process_counter += self.number_of_workers
+        worker_processes = range(proc_offset, proc_offset + self.number_of_workers)
+        logger.info("attempting to create Intercomm with processes " + str(worker_processes))
+
+        #MPI.Intracomm.Create_intercomm(self.INTRACOMM,  self.LOCAL_LEADER, self.BASECOMM, self.REMOTE_LEADER)
+        # INTRACOMM     - communicator of the local group. In this case only the master process.
+        # LOCAL_LEADER  - local leader's rank in the local communicator
+        # BASECOMM      - communicator where local process and remote leader are both present (?) - world communicator for us
+        # REMOTE_LEADER - rank of remote leader in basecomm
+        self.intercomm = MPI.Intracomm.Create_intercomm(MPI.COMM_SELF, 0, MPI.COMM_WORLD, worker_processes[0])
+        logger.info("Intercomm created with processes " + str(worker_processes))
+        

@@ -323,6 +323,30 @@ EMPTY_RUN_LOOP_MPI_STRING = """
 """
 
 RUN_LOOP_MPI_STRING = """
+   function split_comm() result(new_comm)
+      INCLUDE 'mpif.h'
+      integer :: color
+      integer :: rank
+      integer :: new_comm
+      integer :: ierr
+      logical :: init
+      
+      call MPI_INITIALIZED(init,ierr)
+      if(.not.init) then
+         call MPI_INIT(ierr)
+      endif
+      
+      !call MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierror)
+      
+      write(*,*) "Dales worker trying to get own rank"
+      call MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
+      write(*,*) "Dales worker", rank, "calling Scatter to receive a color"
+      call MPI_Scatter( color, 1, MPI_INTEGER, color, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      write(*,*) "Dales worker", rank, "Received color", color
+      
+      call MPI_Comm_split(MPI_COMM_WORLD, color, rank, new_comm, ierr)
+ end function split_comm 
+
     SUBROUTINE run_loop_mpi
       implicit none
       
@@ -332,7 +356,8 @@ RUN_LOOP_MPI_STRING = """
       integer :: rank, parent, ioerror, max_call_count = 255
       integer :: must_run_loop, maximum_size, total_string_length
       integer i, offset, call_count
-      
+      integer :: new_comm
+
       call MPI_INIT_THREAD(MPI_THREAD_MULTIPLE, provided, ioerror)
       
       ALLOCATE(integers_in(max_call_count * MAX_INTEGERS_IN))
@@ -352,8 +377,17 @@ RUN_LOOP_MPI_STRING = """
       !ensure there is at least one string to return an error code in
       ALLOCATE(strings_out(max(1, max_call_count * MAX_STRINGS_OUT)))
       
-      call MPI_COMM_GET_PARENT(parent, ioerror)
+      new_comm = split_comm()
+      MPI_local_comm = new_comm  ! defined in module dales_interface, in interface.f90
+        
+      write(*,*) "worker calling MPI_INTERCOMM_CREATE"
+      ! MPI_INTERCOMM_CREATE(LOCAL_COMM, LOCAL_LEADER, PEER_COMM,
+      !                      REMOTE_LEADER, TAG, NEWINTERCOMM, IERROR)
+      call MPI_INTERCOMM_CREATE(new_comm,0,MPI_COMM_WORLD,0,0,parent,ioerror)
+      
       call MPI_COMM_RANK(parent, rank, ioerror)
+      write(*,*) "worker has rank", rank, "in the 'parent' intercommunicator"
+
       last_communicator_id = last_communicator_id + 1
       communicators(1) = parent
       active_communicator_id = 1

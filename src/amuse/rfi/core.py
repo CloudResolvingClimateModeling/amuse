@@ -26,6 +26,7 @@ from amuse.rfi.channel import MpiChannel
 from amuse.rfi.channel import MultiprocessingMPIChannel
 from amuse.rfi.channel import DistributedChannel
 from amuse.rfi.channel import SocketChannel
+from amuse.rfi.channel import MpiChannelNoSpawn
 from amuse.rfi.channel import is_mpd_running
 
 try:
@@ -921,6 +922,8 @@ class CodeInterface(OptionalAttributes):
             return SocketChannel
         elif self.channel_type == 'local':
             return LocalChannel
+        elif self.channel_type == 'nospawn':
+            return MpiChannelNoSpawn
         else:
             raise exceptions.AmuseException("Cannot create a channel with type {0!r}, type is not supported".format(self.channel_type))
 
