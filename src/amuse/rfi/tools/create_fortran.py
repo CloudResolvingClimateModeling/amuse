@@ -338,11 +338,11 @@ RUN_LOOP_MPI_STRING = """
       
       !call MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierror)
       
-      write(*,*) "Dales worker trying to get own rank"
+      !write(*,*) "Worker trying to get own rank"
       call MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
-      write(*,*) "Dales worker", rank, "calling Scatter to receive a color"
+      !write(*,*) "Worker", rank, "calling Scatter to receive a color"
       call MPI_Scatter( color, 1, MPI_INTEGER, color, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      write(*,*) "Dales worker", rank, "Received color", color
+      write(*,*) "Worker", rank, "Received color", color
       
       call MPI_Comm_split(MPI_COMM_WORLD, color, rank, new_comm, ierr)
  end function split_comm 
@@ -380,13 +380,13 @@ RUN_LOOP_MPI_STRING = """
       new_comm = split_comm()
       MPI_local_comm = new_comm  ! defined in module dales_interface, in interface.f90
         
-      write(*,*) "worker calling MPI_INTERCOMM_CREATE"
+      ! write(*,*) "worker calling MPI_INTERCOMM_CREATE"
       ! MPI_INTERCOMM_CREATE(LOCAL_COMM, LOCAL_LEADER, PEER_COMM,
       !                      REMOTE_LEADER, TAG, NEWINTERCOMM, IERROR)
       call MPI_INTERCOMM_CREATE(new_comm,0,MPI_COMM_WORLD,0,0,parent,ioerror)
       
       call MPI_COMM_RANK(parent, rank, ioerror)
-      write(*,*) "worker has rank", rank, "in the 'parent' intercommunicator"
+      !write(*,*) "worker has rank", rank, "in the 'parent' intercommunicator"
 
       last_communicator_id = last_communicator_id + 1
       communicators(1) = parent
