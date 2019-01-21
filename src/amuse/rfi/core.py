@@ -8,11 +8,12 @@ import pydoc
 import traceback
 import random
 import sys
+import warnings
 
 import inspect
 import functools
 
-#from collections import OrderedDict
+# from collections import OrderedDict
 
 from subprocess import Popen, PIPE
 
@@ -28,6 +29,7 @@ from amuse.rfi.channel import DistributedChannel
 from amuse.rfi.channel import SocketChannel
 from amuse.rfi.channel import MpiChannelNoSpawn
 from amuse.rfi.channel import is_mpd_running
+from amuse.rfi.async_request import DependentASyncRequest
 
 try:
     from amuse import config
@@ -98,6 +100,12 @@ class CodeFunction(object):
         self.specification = specification
     
     def __call__(self, *arguments_list, **keyword_arguments):
+        if self.interface.async_request:
+            try:
+                self.interface.async_request.wait()
+            except Exception,ex:
+                warnings.warn("Ignored exception: " + str(ex))
+            
         dtype_to_values = self.converted_keyword_and_list_arguments( arguments_list, keyword_arguments)
         
         handle_as_array = self.must_handle_as_array(dtype_to_values)
@@ -122,9 +130,7 @@ class CodeFunction(object):
         
         return result
     
-
-
-    def async(self, *arguments_list, **keyword_arguments):
+    def _async_request(self, *arguments_list, **keyword_arguments):
         dtype_to_values = self.converted_keyword_and_list_arguments( arguments_list, keyword_arguments)
         
         handle_as_array = self.must_handle_as_array(dtype_to_values)
@@ -134,18 +140,41 @@ class CodeFunction(object):
         self.interface.channel.send_message(call_id, self.specification.id, dtype_to_arguments = dtype_to_values)
         
         request = self.interface.channel.nonblocking_recv_message(call_id, self.specification.id, handle_as_array)
-        
+
         def handle_result(function):
             try:
                 dtype_to_result = function()
             except Exception, ex:
                 raise exceptions.CodeException("Exception when calling legacy code '{0}', exception was '{1}'".format(self.specification.name, ex))
-            return self.converted_results(dtype_to_result, handle_as_array)
+            result=self.converted_results(dtype_to_result, handle_as_array)
+            return result
             
         request.add_result_handler(handle_result)
+        
         return request
-        
-        
+
+    def asynchronous(self, *arguments_list, **keyword_arguments):
+        if self.interface.async_request is not None:
+            def factory():
+              return self._async_request(*arguments_list, **keyword_arguments)
+            request=DependentASyncRequest( self.interface.async_request, factory) 
+        else:
+            request=self._async_request(*arguments_list, **keyword_arguments)
+
+        request._result_index=self.result_index()
+
+        def handle_result(function):
+
+            result=function()
+            if  self.interface.async_request==request:
+                self.interface.async_request=None
+            return result
+
+        request.add_result_handler(handle_result)
+
+        self.interface.async_request=request
+
+        return request
     
     def must_handle_as_array(self, keyword_arguments):
         for argument_type, argument_values in keyword_arguments.items():
@@ -160,6 +189,17 @@ class CodeFunction(object):
                 if count > 0:
                     return True
         return False
+    
+    """
+    Get list of result keys
+    """
+    def result_index(self):
+        index=[]
+        for parameter in self.specification.output_parameters:
+            index.append(parameter.name)
+        if not self.specification.result_type is None:
+            index.append("__result")
+        return index
         
     """
     Convert results from an MPI message to a return value.
@@ -696,8 +736,9 @@ class CodeInterface(OptionalAttributes):
         :argument hostname: Start the worker on the node with this name
         """
         OptionalAttributes.__init__(self, **options)
-           
-       
+        
+        self.async_request=None
+
         self.instances.append(weakref.ref(self))
         #
         #ave: no more redirection in the code
@@ -959,7 +1000,13 @@ class CodeInterface(OptionalAttributes):
         (Can be) called everytime just before a new set is created
         """
         pass    
-    
+
+    def before_get_data_store_names(self):
+        """
+        called before getting data store names (for state model) - should eventually 
+        not be necessary
+        """
+        pass    
 
     @option(type='string', sections=("channel",))
     def interpreter(self):
@@ -1161,7 +1208,7 @@ class CodeFunctionWithUnits(CodeFunction):
         
         return result
     
-    def async(self, *arguments_list, **keyword_arguments):
+    def _async_request(self, *arguments_list, **keyword_arguments):
         dtype_to_values, units = self.converted_keyword_and_list_arguments( arguments_list, keyword_arguments)
         encoded_units = self.convert_input_units_to_floats(units)
         
