@@ -104,7 +104,7 @@ class CodeFunction(object):
             try:
                 self.interface.async_request.wait()
             except Exception,ex:
-                warnings.warn("Ignored exception: " + str(ex))
+                warnings.warn("Ignored exception in async call: " + str(ex))
             
         dtype_to_values = self.converted_keyword_and_list_arguments( arguments_list, keyword_arguments)
         
@@ -684,7 +684,7 @@ class LegacyFunctionSpecification(object):
             if x.has_default_value():
                 yield x
                 
-    result_type = property(_get_result_type, _set_result_type);
+    result_type = property(_get_result_type, _set_result_type)
 
 
 
@@ -789,6 +789,9 @@ class CodeInterface(OptionalAttributes):
             if self.polling_interval_in_milliseconds > 0:
                 self.internal__set_message_polling_interval(int(self.polling_interval_in_milliseconds * 1000))
         
+    def wait(self):
+        if self.async_request is not None:
+            self.async_request.wait()
 
     @option(type="int", sections=("channel",))
     def polling_interval_in_milliseconds(self):
@@ -1116,12 +1119,11 @@ class PythonCodeInterface(CodeInterface):
         if self.channel_type == 'distributed':
             print "Warning! Distributed channel not fully supported by PythonCodeInterface yet"
         self.implementation_factory = implementation_factory
+        self.worker_dir=options.get("worker_dir",None)
         
-        CodeInterface.__init__(self, name_of_the_worker, **options)
+        CodeInterface.__init__(self, name_of_the_worker, **options)        
     
     def _start(self, name_of_the_worker = 'worker_code', **options):
-
-
 
         if name_of_the_worker is None:
             if self.implementation_factory is None:
@@ -1142,6 +1144,8 @@ class PythonCodeInterface(CodeInterface):
         from amuse.rfi.tools.create_python_worker import CreateAPythonWorker
         
         x = CreateAPythonWorker()
+        if self.worker_dir:
+            x.worker_dir=self.worker_dir
         x.channel_type = self.channel_type
         x.interface_class = type(self)
         x.implementation_factory = implementation_factory

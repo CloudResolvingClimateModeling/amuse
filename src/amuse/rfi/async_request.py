@@ -62,7 +62,9 @@ class AbstractASyncRequest(object):
         #~ return False
         
     def join(self, other):
-        if isinstance(other, AbstractASyncRequest):
+        if other is None:
+            return self
+        elif isinstance(other, AbstractASyncRequest):
             pool = AsyncRequestsPool()
             pool.add_request(self, lambda x: x.result())
             pool.add_request(other, lambda x: x.result())
@@ -338,6 +340,8 @@ class ASyncRequest(AbstractASyncRequest):
         return self._result
 
     def is_mpi_request(self):
+        if self._is_finished:
+            return False
         return True
 
 class ASyncSocketRequest(AbstractASyncRequest):
@@ -409,6 +413,8 @@ class ASyncSocketRequest(AbstractASyncRequest):
         return self._result
 
     def is_socket_request(self):
+        if self._is_finished:
+            return False
         return True
 
 class FakeASyncRequest(AbstractASyncRequest):
@@ -469,7 +475,6 @@ class ASyncRequestSequence(AbstractASyncRequest):
         self.args = args
         self.index = 0
         self.current_async_request = self.create_next_request(self.index, *self.args)
-        self.request = self.current_async_request.request
         self._is_finished = False
         self._is_result_set = False
         self._called_set_result = False
@@ -515,9 +520,7 @@ class ASyncRequestSequence(AbstractASyncRequest):
             self._results.append(self.current_async_request.result())
             self.index += 1
             self.current_async_request = self.create_next_request(self.index, *self.args)
-            if not self.current_async_request is None:
-                self.request = self.current_async_request.request
-            else:
+            if self.current_async_request is None:
                 self._set_result()
       
 
@@ -600,7 +603,6 @@ class AsyncRequestsPool(object):
     def __init__(self, *requests):
         self.requests_and_handlers = []
         self.registered_requests = set([])
-        self.result_handlers = []
         for x in requests:
             self.add_request(x)
         
@@ -640,7 +642,8 @@ class AsyncRequestsPool(object):
             indices = [i for i, x in enumerate(self.requests_and_handlers) if x.async_request.is_other()]
             if len(requests) > 0:
                 for index, x in zip(indices, requests):
-                    x.waits_for().waitone()
+                    if x is not None:
+                        x.waits_for().waitone()
 
                     request_and_handler = self.requests_and_handlers[index]
                     if request_and_handler.async_request.is_result_available():
@@ -717,10 +720,18 @@ class AsyncRequestsPool(object):
                     break
 
     def join(self, other):
-        if isinstance(other, AbstractASyncRequest):
+        if other is None:
+            return self
+        elif isinstance(other, AbstractASyncRequest):
             self.add_request(other, lambda x: x.result())
         elif isinstance(other, AsyncRequestsPool):
-            raise Exception("join with pool not implemented yet...")
+            for x in other.requests_and_handlers:
+                self.add_request(
+                    x.async_request,
+                    x.result_handler,
+                    args = x.args,
+                    kwargs = x.kwargs
+                    )
         else:
             raise Exception("can only join request or pool")
         return self
