@@ -184,11 +184,7 @@ void idata::get_partial_acc_and_jerk()
     static int j_start, j_end;
 
     if (jdat->nj != curr_nj) {
-	int n = jdat->nj/jdat->mpi_size;
-	if (n*jdat->mpi_size < jdat->nj) n++;
-	j_start = jdat->mpi_rank*n;
-	j_end = j_start + n;
-	if (jdat->mpi_rank == jdat->mpi_size-1) j_end = jdat->nj;
+	jdat->define_domain(j_start, j_end);
 	curr_nj = jdat->nj;
     }
 
@@ -215,6 +211,7 @@ void idata::get_partial_acc_and_jerk()
 	    mri = jdat->mass[j]*ri;
 	    mr3i = mri*r2i;
 	    a3 = -3*xv*r2i;
+	    // PRC(jdat->mpi_rank); PRC(ri); PRL(mri);
 	    if (r2 > _TINY_) {
 		lpot[i] -= mri;
 		if (r2 < ldnn[i]) {
@@ -261,7 +258,8 @@ void idata::get_acc_and_jerk()
 
 #ifndef NOMPI
     //cout << "idata Barrier 1 for " << jdat->mpi_rank << endl << flush;
-    jdat->mpi_comm.Barrier();
+    //jdat->mpi_comm.Barrier();
+    MPI_Barrier(jdat->mpi_comm);
     //cout << "idata Barrier 1a for " << jdat->mpi_rank << endl << flush;
 #endif
 
@@ -271,14 +269,17 @@ void idata::get_acc_and_jerk()
 	// If size = 1, the data have already been saved in ipot, etc.
 
 #ifndef NOMPI
-	jdat->mpi_comm.Allreduce(ppot, ipot, ni, MPI_DOUBLE, MPI_SUM);
-	jdat->mpi_comm.Allreduce(pacc, iacc, 3*ni, MPI_DOUBLE, MPI_SUM);
-	jdat->mpi_comm.Allreduce(pjerk, ijerk, 3*ni, MPI_DOUBLE, MPI_SUM);
+	//jdat->mpi_comm.Allreduce(ppot, ipot, ni, MPI_DOUBLE, MPI_SUM);
+	//jdat->mpi_comm.Allreduce(pacc, iacc, 3*ni, MPI_DOUBLE, MPI_SUM);
+	//jdat->mpi_comm.Allreduce(pjerk, ijerk, 3*ni, MPI_DOUBLE, MPI_SUM);
 
+	MPI_Allreduce(ppot, ipot, ni, MPI_DOUBLE, MPI_SUM, jdat->mpi_comm);
+	MPI_Allreduce(pacc, iacc, 3*ni, MPI_DOUBLE, MPI_SUM, jdat->mpi_comm);
+	MPI_Allreduce(pjerk, ijerk, 3*ni, MPI_DOUBLE, MPI_SUM, jdat->mpi_comm);
 	// Update and distribute the nn pointers.  Start by determining
 	// the global nearest neighbor distances.
 
-	jdat->mpi_comm.Allreduce(pdnn, idnn, ni, MPI_DOUBLE, MPI_MIN);
+	MPI_Allreduce(pdnn, idnn, ni, MPI_DOUBLE, MPI_MIN, jdat->mpi_comm);
 #else
     for(int i = 0; i < ni; i++)
     {
@@ -300,7 +301,8 @@ void idata::get_acc_and_jerk()
 	    if (pdnn[i] > idnn[i]) pnn[i] = 0;
 
 #ifndef NOMPI
-	jdat->mpi_comm.Allreduce(pnn, inn, ni, MPI_INT, MPI_SUM);
+	//jdat->mpi_comm.Allreduce(pnn, inn, ni, MPI_INT, MPI_SUM);
+	MPI_Allreduce(pnn, inn, ni, MPI_INT, MPI_SUM, jdat->mpi_comm);
 #else
     for(int i = 0; i < ni; i++)
     {
@@ -311,7 +313,8 @@ void idata::get_acc_and_jerk()
 
 #ifndef NOMPI
     //cout << "idata Barrier 2 for " << jdat->mpi_rank << endl << flush;
-    jdat->mpi_comm.Barrier();
+    //jdat->mpi_comm->Barrier();
+    MPI_Barrier(jdat->mpi_comm);
     //cout << "idata Barrier 2a for " << jdat->mpi_rank << endl << flush;
 #endif
 }
@@ -357,11 +360,8 @@ void idata::predict(real t)
 	// Define the j-domains.  Logic would be easier if ilist was
 	// sorted.
 
-	int n = jdat->nj/jdat->mpi_size;
-	if (n*jdat->mpi_size < jdat->nj) n++;
-	int j_start = jdat->mpi_rank*n;
-	int j_end = j_start + n;
-	if (jdat->mpi_rank == jdat->mpi_size-1) j_end = jdat->nj;
+	int j_start, j_end;
+	jdat->define_domain(j_start, j_end);
 
 	for (int i = 0; i < ni; i++) {
 	    int j = ilist[i];
@@ -816,7 +816,8 @@ void idata::set_list(int jlist[], int njlist)
 	if (jlist[jj] < jdat->nj) ilist[ni++] = jlist[jj];
 }
 
-void idata::advance(real tnext)
+void idata::advance(real tnext,
+		    bool zero_step_mode)	// default = false
 {
     const char *in_function = "idata::advance";
     if (DEBUG > 2 && jdat->mpi_rank == 0) PRL(in_function);
@@ -837,7 +838,8 @@ void idata::advance(real tnext)
 
     predict(tnext);
     get_acc_and_jerk();			// compute iacc, ijerk
-    correct(tnext);			// --> new ipos, ivel
+    if (!zero_step_mode)
+	correct(tnext);			// --> new ipos, ivel
     scatter();				// j pos, vel <-- ipos, ivel
  					// j acc, jerk <-- iacc, ijerk
 

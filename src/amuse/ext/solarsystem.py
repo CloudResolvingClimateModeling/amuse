@@ -2,7 +2,7 @@ import numpy
 
 from amuse.units import units, nbody_system, constants
 from amuse.datamodel import Particles, Particle
-from amuse.community.kepler.interface import Kepler
+
 
 pi_over_180 = numpy.pi/180.
 
@@ -98,6 +98,7 @@ def new_solar_system_for_mercury():
 
 
 def new_kepler():
+  from amuse.community.kepler.interface import Kepler
   converter = nbody_system.nbody_to_si(1|units.MSun,1|units.AU)
   kepler = Kepler(converter)
   kepler.initialize_code()
@@ -156,6 +157,15 @@ def get_sun_and_planets(delta_JD=0.|units.day):
                   5.68319e26,
                   86.8103e24,
                   102.41e24] | units.kg
+  #radius
+  planets.radius = [2439.7,
+                    6051.8,
+                    6378.1,
+                    3396.2,
+                    71492,
+                    60268,
+                    25559,
+                    24764] | units.km
   
   # eccentricity
   planets_ecc = [2.056263501026885E-01,
@@ -226,7 +236,7 @@ def get_sun_and_planets(delta_JD=0.|units.day):
                   'Earth',
                   'Mars',
                   'Jupiter',
-                  'Satrun',
+                  'Saturn',
                   'Uranus',
                   'Neptune']
   
